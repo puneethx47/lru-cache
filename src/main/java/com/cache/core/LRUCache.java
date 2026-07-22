@@ -5,9 +5,7 @@ import com.cache.model.CacheEntry;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Logger;
@@ -28,9 +26,11 @@ public class LRUCache<K, V> implements Cache<K, V> {
     private final int capacity;
     private final Map<K, CacheEntry<V>> store;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
-    private final ScheduledExecutorService evictionScheduler;
+    private final AtomicLong hits = new AtomicLong();
+    private final AtomicLong misses = new AtomicLong();
+    private final AtomicLong evictions = new AtomicLong();
 
-    public LRUCache(int capacity, long evictionIntervalMs) {
+    public LRUCache(int capacity) {
         if (capacity <= 0) throw new IllegalArgumentException("Capacity must be > 0");
 
         this.capacity = capacity;
@@ -38,26 +38,11 @@ public class LRUCache<K, V> implements Cache<K, V> {
         this.store = new LinkedHashMap<>(capacity, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<K, CacheEntry<V>> eldest) {
-                return size() > capacity;
+                boolean remove = size() > capacity;
+                if (remove) evictions.incrementAndGet();
+                return remove;
             }
         };
-
-        this.evictionScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "cache-eviction-thread");
-            t.setDaemon(true);
-            return t;
-        });
-
-        evictionScheduler.scheduleAtFixedRate(
-                this::evictExpiredEntries,
-                evictionIntervalMs,
-                evictionIntervalMs,
-                TimeUnit.MILLISECONDS
-        );
-    }
-
-    public LRUCache(int capacity) {
-        this(capacity, 30_000);
     }
 
     @Override
@@ -78,21 +63,28 @@ public class LRUCache<K, V> implements Cache<K, V> {
 
     @Override
     public Optional<V> get(K key) {
-        lock.readLock().lock();
+        // LinkedHashMap#get mutates ordering when accessOrder=true, so this is a write operation.
+        lock.writeLock().lock();
         try {
             CacheEntry<V> entry = store.get(key);
-            if (entry == null) return Optional.empty();
+            if (entry == null) {
+                misses.incrementAndGet();
+                return Optional.empty();
+            }
 
             if (entry.isExpired()) {
-                lock.readLock().unlock();
-                return removeExpiredAndReturn(key);
+                misses.incrementAndGet();
+                store.remove(key);
+                evictions.incrementAndGet();
+                return Optional.empty();
             }
 
             entry.touch();
+            hits.incrementAndGet();
             return Optional.of(entry.getValue());
 
         } finally {
-            try { lock.readLock().unlock(); } catch (IllegalMonitorStateException ignored) {}
+            lock.writeLock().unlock();
         }
     }
 
@@ -127,37 +119,22 @@ public class LRUCache<K, V> implements Cache<K, V> {
     }
 
     @Override
-    public void shutdown() {
-        evictionScheduler.shutdown();
-        try {
-            if (!evictionScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                evictionScheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            evictionScheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private void evictExpiredEntries() {
+    public int evictExpiredEntries() {
         lock.writeLock().lock();
         try {
+            int before = store.size();
             store.entrySet().removeIf(e -> e.getValue().isExpired());
+            int removed = before - store.size();
+            evictions.addAndGet(removed);
+            return removed;
         } finally {
             lock.writeLock().unlock();
         }
     }
 
-    private Optional<V> removeExpiredAndReturn(K key) {
-        lock.writeLock().lock();
-        try {
-            CacheEntry<V> entry = store.get(key);
-            if (entry != null && entry.isExpired()) {
-                store.remove(key);
-            }
-            return Optional.empty();
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
+    public int capacity() { return capacity; }
+    public long hits() { return hits.get(); }
+    public long misses() { return misses.get(); }
+    public long evictions() { return evictions.get(); }
+
 }

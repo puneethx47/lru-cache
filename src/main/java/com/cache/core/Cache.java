@@ -19,5 +19,5 @@ public interface Cache<K, V> {
 
     void clear();
 
-    void shutdown();
+    int evictExpiredEntries();
 }

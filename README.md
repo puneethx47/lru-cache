@@ -1,72 +1,44 @@
-# LRU Cache with TTL — Spring Boot REST API + Angular UI
+# LRU Cache Console
 
-A thread-safe LRU (Least Recently Used) Cache implementation with TTL expiry, exposed as a Spring Boot REST API with an Angular frontend. Built as a systems design and concurrency learning project.
+A thread-safe named LRU + TTL cache server with proactive background eviction, asynchronous load testing, and an Angular operations UI.
 
----
+## Run locally
 
-## Features
+Backend (Java 25):
 
-- **LRU Eviction** — least recently used entries are evicted when capacity is exceeded
-- **TTL Expiry** — entries can be set to expire after a given time
-- **Thread Safe** — uses `ReentrantReadWriteLock` for concurrent read/write access
-- **Background Eviction** — scheduled daemon thread cleans up expired entries
-- **Named Caches** — manage multiple independent caches via `CacheManager`
-- **REST API** — interact with and load test your cache via HTTP endpoints
-- **Angular UI** — dashboard, load test form, and real-time metrics visualization
-
----
-
-## Tech Stack
-
-**Backend** — Java 21+, Spring Boot 3.5.0, Maven
-
-**Frontend** — Angular, Angular Material, Chart.js
-
----
-
-## Getting Started
-
-### Backend
 ```bash
-cd lru-cache
-mvn clean spring-boot:run
+mvn spring-boot:run
 ```
-Runs on http://localhost:8080
 
-### Frontend
+Frontend:
+
 ```bash
-cd lru-cache-ui
+cd cache-ui
 npm install
-ng serve
+npm start
 ```
-Runs on http://localhost:4200
 
----
+Open `http://localhost:4200`. The UI expects the API at `http://localhost:8080/api`; change `cache-ui/src/environments/environment.ts` for another deployment.
 
-## API Endpoints
+Alternatively, run both services with `docker compose up --build`.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/cache/{name}/get?key=` | Get a cache entry |
-| POST | `/api/cache/{name}/put` | Add a cache entry |
-| DELETE | `/api/cache/{name}/remove?key=` | Remove a cache entry |
-| POST | `/api/cache-manager/create` | Create a named cache |
-| GET | `/api/cache-manager/caches` | List all caches |
-| POST | `/api/load-test/run` | Run a load test with parameters |
-| POST | `/api/load-test/run/quick?cacheName=users` | Quick run with defaults |
+## REST API
 
----
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/caches` | List cache summaries and stats |
+| `POST` | `/api/caches` | Create a cache (`name`, `capacity`) |
+| `DELETE` | `/api/caches/{name}` | Remove a cache |
+| `GET` | `/api/caches/{name}/entries/{key}` | Get an entry |
+| `PUT` | `/api/caches/{name}/entries` | Put `{ key, value, ttlMillis? }` |
+| `DELETE` | `/api/caches/{name}/entries/{key}` | Delete an entry |
+| `POST` | `/api/caches/{name}/loadtest` | Start an asynchronous load test |
+| `GET` | `/api/caches/{name}/loadtest/{testId}` | Poll live/final load-test stats |
 
-## Key Design Decisions
+Load-test POST fields are `threadCount`, optional `opsPerSecond` (omit or `null` for unbounded), `keySpaceSize`, `readWriteRatio` (0–1), `durationSeconds`, and `valueSizeBytes`. The start response is HTTP 202 and includes a `testId` and `QUEUED` or `RUNNING` status.
 
-1. **LinkedHashMap** `accessOrder=true` — maintains LRU order automatically
-2. **ReentrantReadWriteLock** — concurrent reads, exclusive writes
-3. **No lock upgrade** — read lock released before acquiring write lock
-4. **AtomicLong counters** — lock-free metrics collection across threads
-5. **CORS configured** — Angular (4200) can call Spring Boot (8080)
+`cache.eviction.interval-ms` controls the single shared eviction scheduler; Spring environment binding also accepts `CACHE_EVICTION_INTERVAL_MS`.
 
----
+## Design assumptions
 
-## License
-
-MIT
+The original repository did not contain the described cache CRUD/list/stats controllers, so the UI and backend were aligned on the `/api/caches` shapes documented above. Values are strings, TTL is supplied per put in milliseconds, hit ratio is a number from 0 to 1, and eviction counts include capacity and TTL evictions.

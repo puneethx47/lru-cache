@@ -19,7 +19,7 @@ public class CacheDemo {
 
         // Demo 1: Basic LRU eviction
         System.out.println("--- Demo 1: LRU Eviction (capacity=3) ---");
-        LRUCache<String, String> cache = new LRUCache<>(3, 5000);
+        LRUCache<String, String> cache = new LRUCache<>(3);
         cache.put("a", "Apple");
         cache.put("b", "Banana");
         cache.put("c", "Cherry");
@@ -30,11 +30,10 @@ public class CacheDemo {
         System.out.println("  c => " + cache.get("c"));
         System.out.println("  d => " + cache.get("d"));
         System.out.println("  Size: " + cache.size());
-        cache.shutdown();
 
         // Demo 2: TTL expiry
         System.out.println("\n--- Demo 2: TTL Expiry ---");
-        LRUCache<String, String> ttlCache = new LRUCache<>(100, 1000);
+        LRUCache<String, String> ttlCache = new LRUCache<>(100);
         ttlCache.put("session:user1", "token-abc", 2000);
         ttlCache.put("session:user2", "token-xyz");
         System.out.println("Immediately:");
@@ -44,11 +43,10 @@ public class CacheDemo {
         System.out.println("After 2.5s:");
         System.out.println("  user1 => " + ttlCache.get("session:user1")); // expired
         System.out.println("  user2 => " + ttlCache.get("session:user2"));
-        ttlCache.shutdown();
 
         // Demo 3: Concurrent access
         System.out.println("\n--- Demo 3: Concurrent Read/Write (10 threads) ---");
-        LRUCache<Integer, String> concurrentCache = new LRUCache<>(50, 2000);
+        LRUCache<Integer, String> concurrentCache = new LRUCache<>(50);
         ExecutorService executor = Executors.newFixedThreadPool(10);
 
         for (int i = 0; i < 5; i++) {
@@ -76,11 +74,10 @@ public class CacheDemo {
         executor.shutdown();
         executor.awaitTermination(10, TimeUnit.SECONDS);
         System.out.println("  Final cache size: " + concurrentCache.size());
-        concurrentCache.shutdown();
 
         // Demo 4: CacheManager
         System.out.println("\n--- Demo 4: CacheManager ---");
-        CacheManager manager = new CacheManager();
+        CacheManager manager = new CacheManager(Executors.newSingleThreadScheduledExecutor(), 30_000);
         LRUCache<String, String> userCache    = manager.createCache("users",    1000, 60_000);
         LRUCache<String, String> sessionCache = manager.createCache("sessions", 500,  30_000);
         userCache.put("user:42", "Puneeth R", 60_000);
